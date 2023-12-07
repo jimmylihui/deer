@@ -1,7 +1,7 @@
 from typing import Callable, Tuple, Optional, Any, List
 import jax
 import jax.numpy as jnp
-from deer_iter import deer_iteration
+from deer_iter_2 import deer_iteration
 # 1D sequence: RNN or ODE
 
 
@@ -57,8 +57,10 @@ def solve_ivp(func: Callable[[jnp.ndarray, jnp.ndarray, Any], jnp.ndarray],
     return yt
 
 
-def seq1d(func: Callable[[jnp.ndarray, Any, Any], jnp.ndarray],
-          y0: jnp.ndarray, xinp: Any, params: Any,
+def seq1d(model,
+          carry, input, output,
+          parameter,
+          structure,
           yinit_guess: Optional[jnp.ndarray] = None,
           max_iter: int = 100) -> jnp.ndarray:
     """
@@ -89,26 +91,26 @@ def seq1d(func: Callable[[jnp.ndarray, Any, Any], jnp.ndarray],
         excluding the initial states.
     """
     # set the default initial guess
-    xinp_flat = jax.tree_util.tree_flatten(xinp)[0][0]
-    if yinit_guess is None:
-        yinit_guess = jnp.zeros((xinp_flat.shape[0], y0.shape[-1]), dtype=xinp_flat.dtype)  # (nsamples, ny)
+    # xinp_flat = jax.tree_util.tree_flatten(xinp)[0][0]
+    # if yinit_guess is None:
+    #     yinit_guess = jnp.zeros((xinp_flat.shape[0], y0.shape[-1]), dtype=xinp_flat.dtype)  # (nsamples, ny)
 
-    def func2(ylist: List[jnp.ndarray], x: Any, params: Any) -> jnp.ndarray:
-        # ylist: (ny,)
-        return func(ylist[0], x, params)
+    # def func2(ylist: List[jnp.ndarray], x: Any, params: Any) -> jnp.ndarray:
+    #     # ylist: (ny,)
+    #     return func(ylist[0], x, params)
 
     def shifter_func(y: jnp.ndarray, shifter_params: Any) -> List[jnp.ndarray]:
-        # y: (nsamples, ny)
+        # w: (nsamples, ny)
         # shifter_params = (y0,)
         y0, = shifter_params
         y = jnp.concatenate((y0[None, :], y[:-1, :]), axis=0)  # (nsamples, ny)
-        return [y]
+        return y
 
     # perform the deer iteration
     yt = deer_iteration(
-        inv_lin=seq1d_inv_lin, p_num=1, func=func2, shifter_func=shifter_func, params=params, xinput=xinp,
-        inv_lin_params=(y0,), shifter_func_params=(y0,),
-        yinit_guess=yinit_guess, max_iter=max_iter)
+        inv_lin=seq1d_inv_lin,  func=model, shifter_func=shifter_func, p_num=1, xinput=input,youtput=output,parameter=parameter,structure=structure,
+        inv_lin_params=(carry,), shifter_func_params=(carry,),
+         max_iter=max_iter)
     return yt
 
 

@@ -4,17 +4,22 @@ import jax
 import jax.numpy as jnp
 
 
-@partial(jax.custom_vjp, nondiff_argnums=(0, 1, 2, 3, 9))
+# @partial(jax.custom_vjp, nondiff_argnums=(0, 1, 2, 3, 9))
+# @partial(jax.jit, static_argnums=(0,))
 def deer_iteration(
         inv_lin: Callable[[List[jnp.ndarray], jnp.ndarray, Any], jnp.ndarray],
         func: Callable[[List[jnp.ndarray], Any, Any], jnp.ndarray],
         shifter_func: Callable[[jnp.ndarray], List[jnp.ndarray]],
         p_num: int,
-        params: Any,  # gradable
-        xinput: Any,  # gradable
+        # params: Any,  # gradable
+        # xinput: Any,  # gradable
+        xinput,
+        youtput,
+        parameter,
+        structure,
         inv_lin_params: Any,  # gradable
         shifter_func_params: Any,  # gradable
-        yinit_guess: jnp.ndarray,  # gradable as 0
+        # yinit_guess: jnp.ndarray,  # gradable as 0
         max_iter: int = 100,
         ) -> jnp.ndarray:
     """
@@ -61,11 +66,15 @@ def deer_iteration(
         func=func,
         shifter_func=shifter_func,
         p_num=p_num,
-        params=params,
+
         xinput=xinput,
+        youtput=youtput,
+        parameter=parameter,
+        structure=structure,
+
         inv_lin_params=inv_lin_params,
         shifter_func_params=shifter_func_params,
-        yinit_guess=yinit_guess,
+    
         max_iter=max_iter)[0]
 
 
@@ -74,37 +83,51 @@ def deer_iteration_helper(
         func: Callable[[List[jnp.ndarray], Any, Any], jnp.ndarray],
         shifter_func: Callable[[jnp.ndarray, Any], List[jnp.ndarray]],
         p_num: int,
-        params: Any,  # gradable
-        xinput: Any,  # gradable
+        # params: Any,  # gradable
+        # xinput: Any,  # gradable
+        xinput,
+        youtput,
+        parameter,
+        structure,
         inv_lin_params: Any,  # gradable
         shifter_func_params: Any,  # gradable
-        yinit_guess: jnp.ndarray,
+        # yinit_guess: jnp.ndarray,
         max_iter: int = 100,
         ) -> Tuple[jnp.ndarray, List[jnp.ndarray], Callable]:
     # obtain the functions to compute the jacobians and the function
-    jacfunc = jax.vmap(jax.jacfwd(func, argnums=0), in_axes=(0, 0, None))
-    func2 = jax.vmap(func, in_axes=(0, 0, None))
+    jacfunc = jax.vmap(jax.jacfwd(func, argnums=2), in_axes=(0, 0, 0))
+    func2 = jax.vmap(func, in_axes=(0, 0, 0))
 
-    dtype = yinit_guess.dtype
+    dtype = xinput.dtype
     # set the tolerance to be 1e-4 if dtype is float32, else 1e-7 for float64
     tol = 1e-7 if dtype == jnp.float64 else 1e-4
 
     # def iter_func(err, yt, gt_, iiter):
     def iter_func(iter_inp: Tuple[jnp.ndarray, jnp.ndarray, List[jnp.ndarray], jnp.ndarray]) \
             -> Tuple[jnp.ndarray, jnp.ndarray, List[jnp.ndarray], jnp.ndarray]:
-        err, yt, gt_, iiter = iter_inp
+        err, yt, gt_, iiter= iter_inp
+        
         # gt_ is not used, but it is needed to return at the end of scan iteration
         # yt: (nsamples, ny)
-        ytparams = shifter_func(yt, shifter_func_params)#[carray, yt[:-1]]
-        gts = [-gt for gt in jacfunc(ytparams, xinput, params)]  # [p_num] + (nsamples, ny, ny), obtain differentiation
+        ytparams = shifter_func(parameter, shifter_func_params)#[carray, yt[:-1]]
+        # ytparams[0] =jnp.reshape(ytparams[0],(ytparams[0].shape[0],ytparams[0].shape[1]*ytparams[0].shape[2]))
+        
+        gts,error = [-gt for gt in jacfunc(xinput, youtput, ytparams)]  # [p_num] + (nsamples, ny, ny), obtain differentiation
+        # gts=jnp.reshape(gts,(gts.shape[0],gts.shape[1]*gts.shape[2],gts.shape[3]*gts.shape[4]))
         # rhs: (nsamples, ny)
-        rhs = func2(ytparams, xinput, params)  # (carry, input, params) see train.py L41
-        rhs += sum([jnp.einsum("...ij,...j->...i", gt, ytp) for gt, ytp in zip(gts, ytparams)])
+        rhs,error = func2(xinput, youtput, ytparams)  # (carry, input, params) see train.py L41
+        # rhs =jnp.reshape(rhs,(rhs.shape[0],rhs.shape[1]*rhs.shape[2]))
 
         
+        
+        rhs += sum([jnp.einsum("...ij,...j->...i", gt, ytp) for gt, ytp in zip(gts, ytparams)])
+        # inv=inv_lin_params[0]
+        gts=[gts]
         yt_next = inv_lin(gts, rhs, inv_lin_params)  # (nsamples, ny)
-        err = jnp.max(jnp.abs(yt_next - yt))  # checking convergence
+        gts=gts[0]
+        err = jnp.mean(jnp.abs(yt_next - yt))  # checking convergence
         jax.debug.print("iiter: {iiter}, err: {err}", iiter=iiter, err=err)
+       
         return err, yt_next, gts, iiter + 1
 
     def cond_func(iter_inp: Tuple[jnp.ndarray, jnp.ndarray, List[jnp.ndarray], jnp.ndarray]) -> bool:
@@ -116,10 +139,13 @@ def deer_iteration_helper(
         return jax.lax.cond(iter_inp[0] > tol, iter_func, lambda *iter_inp: iter_inp, *iter_inp), None
 
     err = jnp.array(1e10, dtype=dtype)  # initial error should be very high
-    gt = jnp.zeros((yinit_guess.shape[0], yinit_guess.shape[-1], yinit_guess.shape[-1]), dtype=dtype)
-    gts = [gt] * p_num
+    # shape=parameter.shape[1]*parameter.shape[2]
+    gt = jnp.zeros((parameter.shape[0], parameter.shape[-1], parameter.shape[-1]), dtype=dtype)
+    # gts = [gt] * p_num
+    gts=gt
     iiter = jnp.array(0, dtype=jnp.int32)
-    err, yt, gts, iiter = jax.lax.while_loop(cond_func, iter_func, (err, yinit_guess, gts, iiter))
+    # parameter_2=jnp.reshape(parameter,(parameter.shape[0],parameter.shape[1]*parameter.shape[2]))
+    err, yt, gts, iiter= jax.lax.while_loop(cond_func, iter_func, (err, parameter, gts, iiter),)
     # (err, yt, gts, iiter), _ = jax.lax.scan(scan_func, (err, yinit_guess, gts, iiter), None, length=max_iter)
     return yt, gts, func2
 
@@ -179,4 +205,4 @@ def deer_iteration_bwd(
     return grad_params, grad_xinput, grad_inv_lin_params, grad_shifter_func_params, None
 
 
-deer_iteration.defvjp(deer_iteration_eval, deer_iteration_bwd)
+# deer_iteration.defvjp(deer_iteration_eval, deer_iteration_bwd)
