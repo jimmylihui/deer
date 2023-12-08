@@ -30,8 +30,8 @@ def make_step(model, x, y, opt_state):
 def Linear(x,y,parameter):
     # dim_1=structure[0]
     # dim_2=structure[1]
-    parameter=jnp.reshape(parameter,(2,1))
-    alpha=100
+    parameter=jnp.reshape(parameter,(2,2))
+    alpha=0.1
     x=jnp.atleast_2d(x)
     parameter=jnp.atleast_2d(parameter)
     y=jnp.atleast_2d(y)
@@ -47,8 +47,8 @@ def Linear(x,y,parameter):
     # parameter+= -alpha*x.T.dot(D)
     parameter+= -alpha*einsum('bi,bo->io',x,D)
     # jax.debug.print("parameter after:{parameter}", parameter=parameter[0])
-    parameter=jnp.reshape(parameter,(2))
-    return parameter,error
+    parameter=jnp.reshape(parameter,(4))
+    return parameter
 
 def Linear_2(x,y,parameter):
     alpha=100
@@ -74,11 +74,11 @@ def loop(parameter,input,output,model):
     for i in range(input.shape[0]):
         x=input[i:i+1,:]
         y=output[i:i+1,:]
-        parameter,error=model(x,y,parameter)
-        error_list.append(error)
-        jax.debug.print("error:{error}", error=error[0])
+        parameter=model(x,y,parameter)
+        # error_list.append(error)
+        # jax.debug.print("error:{error}", error=error[0])
         
-    return parameter,error_list
+    return parameter
 
     
 

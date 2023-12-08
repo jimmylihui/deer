@@ -109,24 +109,29 @@ def deer_iteration_helper(
         
         # gt_ is not used, but it is needed to return at the end of scan iteration
         # yt: (nsamples, ny)
-        ytparams = shifter_func(parameter, shifter_func_params)#[carray, yt[:-1]]
+        
+        ytparams = shifter_func(yt, shifter_func_params)#[carray, yt[:-1]]
+        # jax.debug.print("iiter: {iiter}, err: {err}", iiter=iiter, err=yt_next[-1])
         # ytparams[0] =jnp.reshape(ytparams[0],(ytparams[0].shape[0],ytparams[0].shape[1]*ytparams[0].shape[2]))
         
-        gts,error = [-gt for gt in jacfunc(xinput, youtput, ytparams)]  # [p_num] + (nsamples, ny, ny), obtain differentiation
+        gts= jax.numpy.asarray([-gt for gt in jacfunc(xinput, youtput, ytparams)])  # [p_num] + (nsamples, ny, ny), obtain differentiation\
+        
         # gts=jnp.reshape(gts,(gts.shape[0],gts.shape[1]*gts.shape[2],gts.shape[3]*gts.shape[4]))
         # rhs: (nsamples, ny)
-        rhs,error = func2(xinput, youtput, ytparams)  # (carry, input, params) see train.py L41
+        # jax.debug.print("iiter: {iiter}, err: {err}", iiter=iiter, err=error)
+        rhs= func2(xinput, youtput, ytparams)  # (carry, input, params) see train.py L41
         # rhs =jnp.reshape(rhs,(rhs.shape[0],rhs.shape[1]*rhs.shape[2]))
-
+        
         
         
         rhs += sum([jnp.einsum("...ij,...j->...i", gt, ytp) for gt, ytp in zip(gts, ytparams)])
         # inv=inv_lin_params[0]
         gts=[gts]
         yt_next = inv_lin(gts, rhs, inv_lin_params)  # (nsamples, ny)
+        
         gts=gts[0]
         err = jnp.mean(jnp.abs(yt_next - yt))  # checking convergence
-        jax.debug.print("iiter: {iiter}, err: {err}", iiter=iiter, err=err)
+        
        
         return err, yt_next, gts, iiter + 1
 

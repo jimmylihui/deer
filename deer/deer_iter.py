@@ -95,6 +95,7 @@ def deer_iteration_helper(
         err, yt, gt_, iiter = iter_inp
         # gt_ is not used, but it is needed to return at the end of scan iteration
         # yt: (nsamples, ny)
+        
         ytparams = shifter_func(yt, shifter_func_params)#[carray, yt[:-1]]
         gts = [-gt for gt in jacfunc(ytparams, xinput, params)]  # [p_num] + (nsamples, ny, ny), obtain differentiation
         # rhs: (nsamples, ny)
