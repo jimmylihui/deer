@@ -25,6 +25,7 @@ def eval_gru(carry, inputs: jnp.ndarray,outputs:jnp.ndarray,parameter,model,stru
         
         parameter=loop(parameter,inputs,outputs,model)
         parameter_list.append(parameter)
+        parameter_list=jax.numpy.asarray(parameter_list)
 
     elif method == "deer":
         # def call_gru2(carry: jnp.ndarray, inputs: jnp.ndarray,outputs:jnp.ndarray, params):#function
@@ -32,12 +33,12 @@ def eval_gru(carry, inputs: jnp.ndarray,outputs:jnp.ndarray,parameter,model,stru
         #     return gru(inputs, carry,outputs)
 
         # seq1dm = jax.vmap(seq1d, in_axes=(None, None, 0, 0,None,None), out_axes=1)
-        seq1d(model, carry,inputs,outputs, parameter,structure)
+        parameter_list=seq1d(model, carry,inputs,outputs, parameter,structure)
 
     else:
         raise ValueError(f"Unknown method: '{method}'. Must be 'sequential' or 'deer'.")
 
-    return 0
+    return parameter_list
 
 def main():
     parser = argparse.ArgumentParser()
@@ -45,7 +46,7 @@ def main():
     parser.add_argument("--cell", type=str, default="linear", help="Cell type, either 'gru' or 'lstm'")
     parser.add_argument("--inputsize", type=int, default=2, help="The number of input features")
     parser.add_argument('--outputsize',type=int,default=2)
-    parser.add_argument("--batchsize", type=int, default=1000, help="Batch size")
+    parser.add_argument("--batchsize", type=int, default=1, help="Batch size")
     parser.add_argument("--length", type=int, default=1000, help="Sequence length")
     parser.add_argument("--dtype", type=str, default="float32", help="Data type, either 'float32' or 'float64'")
     args = parser.parse_args()
